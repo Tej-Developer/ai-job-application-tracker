@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trackr — AI Job Application Tracker</title>
+<style>
+  :root{
+    --ink:#1c1f26;
+    --paper:#f6f5f1;
+    --panel:#ffffff;
+    --line:#e2e0d8;
+    --accent:#2e5339;      /* deep pine green */
+    --accent-soft:#d9e6dc;
+    --warn:#b3541e;        /* burnt orange for reminders */
+    --warn-soft:#f3e0d2;
+    --muted:#6b6f76;
+    --applied:#5b6b8a;
+    --interview:#9c7a2e;
+    --offer:#2e7d5b;
+    --rejected:#a44242;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  header{
+    padding:28px 32px 18px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  header h1{
+    font-family:Georgia, 'Times New Roman', serif;
+    font-size:1.6rem;
+    margin:0;
+    letter-spacing:0.3px;
+  }
+  header h1 span{color:var(--accent);}
+  header p{margin:0;color:var(--muted);font-size:0.85rem;}
+
+  main{
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px 24px 60px;
+    display:grid;
+    gap:24px;
+  }
+
+  #reminder-bar{
+    display:none;
+    background:var(--warn-soft);
+    border:1px solid #e3b393;
+    color:#6e3210;
+    padding:12px 16px;
+    border-radius:var(--radius);
+    font-size:0.9rem;
+  }
+  #reminder-bar.show{display:block;}
+  #reminder-bar strong{display:block;margin-bottom:4px;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:22px 24px;
+  }
+  .panel h2{
+    font-family:Georgia, serif;
+    font-size:1.05rem;
+    margin:0 0 14px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .panel h2 .num{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:22px;height:22px;
+    border-radius:50%;
+    background:var(--accent);
+    color:#fff;
+    font-size:0.75rem;
+  }
+
+  label{
+    display:block;
+    font-size:0.78rem;
+    color:var(--muted);
+    margin:12px 0 4px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+  }
+  input[type=text], textarea, select{
+    width:100%;
+    padding:9px 11px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:0.9rem;
+    font-family:inherit;
+    background:#fdfdfc;
+    color:var(--ink);
+  }
+  textarea{resize:vertical;min-height:90px;}
+  input:focus, textarea:focus, select:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:700px){.row{grid-template-columns:1fr;}}
+
+  button{
+    cursor:pointer;
+    border:none;
+    border-radius:6px;
+    padding:10px 18px;
+    font-size:0.88rem;
+    font-weight:600;
+    font-family:inherit;
+  }
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:#233f2b;}
+  .btn-secondary{background:var(--accent-soft);color:var(--accent);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
+  .btn-danger{background:transparent;color:var(--rejected);border:1px solid #e0b7b7;}
+  .btn-row{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;}
+
+  #analysis-result{margin-top:18px;display:none;}
+  #analysis-result.show{display:block;}
+  .score-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size:1.4rem;
+    font-weight:700;
+    color:var(--accent);
+  }
+  .score-badge small{font-size:0.7rem;color:var(--muted);font-weight:400;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .chip{
+    background:var(--accent-soft);
+    color:var(--accent);
+    padding:4px 10px;
+    border-radius:20px;
+    font-size:0.78rem;
+  }
+  ul.suggestions{margin:10px 0 0;padding-left:18px;font-size:0.88rem;color:#3a3d43;}
+  ul.suggestions li{margin-bottom:4px;}
+
+  table{width:100%;border-collapse:collapse;font-size:0.86rem;}
+  th{
+    text-align:left;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:var(--muted);
+    padding:8px 10px;
+    border-bottom:2px solid var(--line);
+  }
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  tr:hover td{background:#faf9f6;}
+
+  .status-pill{
+    padding:3px 10px;
+    border-radius:20px;
+    font-size:0.74rem;
+    font-weight:600;
+    border:1px solid transparent;
+  }
+  .status-Applied{background:#eaeef5;color:var(--applied);}
+  .status-Interview{background:#f7edd8;color:var(--interview);}
+  .status-Offer{background:#e1f0e6;color:var(--offer);}
+  .status-Rejected{background:#f5e2e2;color:var(--rejected);}
+
+  .mini-input{padding:5px 7px;font-size:0.8rem;}
+  .empty-state{color:var(--muted);font-size:0.9rem;padding:20px 0;text-align:center;}
+  footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:20px;}
+  .config-note{font-size:0.72rem;color:var(--muted);margin-top:6px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Trackr<span>.</span></h1>
+    <p>AI job application tracker — paste a job, get a match score, never miss a follow-up.</p>
+  </div>
+</header>
+
+<main>
+  <div id="reminder-bar"></div>
+
+  <section class="panel">
+    <h2><span class="num">1</span> Paste a job + your resume</h2>
+    <label for="job-link">Job link (optional)</label>
+    <input type="text" id="job-link" placeholder="https://company.com/careers/role" />
+
+    <label for="job-desc">Job description</label>
+    <textarea id="job-desc" placeholder="Paste the full job description text here..."></textarea>
+
+    <label for="resume-text">Your resume (paste as plain text)</label>
+    <textarea id="resume-text" placeholder="Paste your resume text here..."></textarea>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="analyze-btn">Analyze with AI</button>
+      <span class="config-note" id="analyze-status"></span>
+    </div>
+
+    <div id="analysis-result">
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0;">
+      <div><strong id="result-company">—</strong> <span id="result-title" style="color:var(--muted);"></span></div>
+      <div class="score-badge"><span id="result-score">0%</span><small>resume match</small></div>
+      <div class="chips" id="result-skills"></div>
+      <ul class="suggestions" id="result-suggestions"></ul>
+      <div class="btn-row">
+        <button class="btn-secondary" id="track-btn">Track this application</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="num">2</span> Your applications</h2>
+    <div id="table-wrap">
+      <table id="app-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Role</th>
+            <th>Score</th>
+            <th>Applied</th>
+            <th>Interview</th>
+            <th>Follow-up</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="app-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="empty-state">No applications tracked yet — analyze a job above to get started.</div>
+    </div>
+  </section>
+</main>
+
+<footer>Trackr v1 · Backend: Flask + Groq · Frontend: static HTML/JS · Built for students juggling 100+ applications.</footer>
+
+<script>
+// ---------------------------------------------------------------------
+// CONFIG: point this at your deployed Render backend URL.
+// Locally this defaults to the Flask dev server.
+// ---------------------------------------------------------------------
+const API_BASE_URL = window.API_BASE_URL || "http://localhost:5000";
+
+const el = (id) => document.getElementById(id);
+let lastAnalysis = null;
+
+async function api(path, options = {}) {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+// ---- Step 1: Analyze ----
+el("analyze-btn").addEventListener("click", async () => {
+  const job_description = el("job-desc").value.trim();
+  const resume_text = el("resume-text").value.trim();
+  const job_link = el("job-link").value.trim();
+
+  if (!job_description) {
+    el("analyze-status").textContent = "Paste a job description first.";
+    return;
+  }
+
+  el("analyze-status").textContent = "Analyzing with Groq...";
+  el("analyze-btn").disabled = true;
+
+  try {
+    const data = await api("/api/analyze", {
+      method: "POST",
+      body: JSON.stringify({ job_description, resume_text, job_link }),
+    });
+    lastAnalysis = { ...data, job_description };
+    renderAnalysis(data);
+    el("analyze-status").textContent = "Done.";
+  } catch (err) {
+    el("analyze-status").textContent = "Analysis failed — check backend URL / API key.";
+    console.error(err);
+  } finally {
+    el("analyze-btn").disabled = false;
+  }
+});
+
+function renderAnalysis(data) {
+  el("result-company").textContent = data.company || "Unknown company";
+  el("result-title").textContent = data.job_title ? `· ${data.job_title}` : "";
+  el("result-score").textContent = `${data.match_score ?? 0}%`;
+
+  const skillsWrap = el("result-skills");
+  skillsWrap.innerHTML = "";
+  (data.skills || []).forEach((s) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = s;
+    skillsWrap.appendChild(chip);
+  });
+
+  const sugList = el("result-suggestions");
+  sugList.innerHTML = "";
+  (data.suggestions || []).forEach((s) => {
+    const li = document.createElement("li");
+    li.textContent = s;
+    sugList.appendChild(li);
+  });
+
+  el("analysis-result").classList.add("show");
+}
+
+// ---- Step 2: Track application ----
+el("track-btn").addEventListener("click", async () => {
+  if (!lastAnalysis) return;
+  try {
+    await api("/api/applications", {
+      method: "POST",
+      body: JSON.stringify({
+        company: lastAnalysis.company,
+        job_title: lastAnalysis.job_title,
+        job_link: lastAnalysis.job_link,
+        job_description: lastAnalysis.job_description,
+        skills: lastAnalysis.skills,
+        match_score: lastAnalysis.match_score,
+        suggestions: lastAnalysis.suggestions,
+        applied_date: new Date().toISOString().slice(0, 10),
+        status: "Applied",
+      }),
+    });
+    el("job-desc").value = "";
+    el("job-link").value = "";
+    el("analysis-result").classList.remove("show");
+    loadApplications();
+    loadReminders();
+  } catch (err) {
+    alert("Could not save application. Check the backend connection.");
+    console.error(err);
+  }
+});
+
+// ---- Applications table ----
+async function loadApplications() {
+  const apps = await api("/api/applications");
+  const tbody = el("app-tbody");
+  tbody.innerHTML = "";
+  el("empty-state").style.display = apps.length ? "none" : "block";
+
+  apps.forEach((a) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(a.company)}</td>
+      <td>${escapeHtml(a.job_title || "-")}</td>
+      <td>${a.match_score ?? 0}%</td>
+      <td><input class="mini-input" type="date" value="${a.applied_date || ""}" data-field="applied_date" data-id="${a.id}"/></td>
+      <td><input class="mini-input" type="date" value="${a.interview_date || ""}" data-field="interview_date" data-id="${a.id}"/></td>
+      <td><input class="mini-input" type="date" value="${a.follow_up_date || ""}" data-field="follow_up_date" data-id="${a.id}"/></td>
+      <td>
+        <select class="mini-input status-select" data-id="${a.id}">
+          ${["Applied", "Interview", "Offer", "Rejected"].map(
+            (s) => `<option value="${s}" ${s === a.status ? "selected" : ""}>${s}</option>`
+          ).join("")}
+        </select>
+      </td>
+      <td><button class="btn-danger" data-id="${a.id}" data-action="delete">Delete</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll("input[data-field]").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      const { id, field } = e.target.dataset;
+      await api(`/api/applications/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ [field]: e.target.value }),
+      });
+      loadReminders();
+    });
+  });
+
+  tbody.querySelectorAll(".status-select").forEach((sel) => {
+    sel.addEventListener("change", async (e) => {
+      await api(`/api/applications/${e.target.dataset.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: e.target.value }),
+      });
+      loadReminders();
+    });
+  });
+
+  tbody.querySelectorAll("[data-action='delete']").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      if (!confirm("Delete this application?")) return;
+      await api(`/api/applications/${e.target.dataset.id}`, { method: "DELETE" });
+      loadApplications();
+      loadReminders();
+    });
+  });
+}
+
+// ---- Reminders ----
+async function loadReminders() {
+  const due = await api("/api/reminders");
+  const bar = el("reminder-bar");
+  if (due.length === 0) {
+    bar.classList.remove("show");
+    return;
+  }
+  bar.classList.add("show");
+  bar.innerHTML = `<strong>Follow-up reminders (${due.length})</strong>` +
+    due.map((d) => `${escapeHtml(d.company)} — follow up by ${d.follow_up_date}`).join(" · ");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+// ---- Init ----
+loadApplications();
+loadReminders();
+</script>
+
+</body>
+</html>

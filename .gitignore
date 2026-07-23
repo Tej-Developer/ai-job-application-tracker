@@ -1,0 +1,44 @@
+# ---- Environment / secrets ----
+.env
+backend/.env
+*.env.local
+
+# ---- Python (backend) ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+venv/
+env/
+.venv/
+*.venv
+pip-log.txt
+
+# ---- Database (SQLite) ----
+*.db
+*.sqlite
+*.sqlite3
+backend/tracker.db
+
+# ---- Logs ----
+*.log
+server.log
+
+# ---- Vercel / Node (if frontend build tooling is added later) ----
+.vercel/
+node_modules/
+npm-debug.log*
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+
+# ---- Uploaded test files ----
+*.pdf
+!README*.pdf
