@@ -1,13 +1,14 @@
 """
-AI Job Application Tracker - Backend (v1)
+AI Job Application Tracker - Backend (v1.1)
 ------------------------------------------
 A single-file Flask app (kept intentionally low-code) that:
-  1. Accepts a pasted job description + resume text
-  2. Calls Groq (free LLM API) to extract company, required skills,
+  1. Accepts a pasted job description + resume text (typed OR uploaded as PDF)
+  2. Saves the uploaded resume so the user never has to re-upload it
+  3. Calls Groq (free LLM API) to extract company, required skills,
      a resume match score, and improvement suggestions
-  3. Stores applications (with dates & status) in SQLite
-  4. Exposes a small REST API used by the static frontend
-  5. Computes "due for follow-up" reminders
+  4. Stores applications (with dates & status) in SQLite
+  5. Exposes a small REST API used by the static frontend
+  6. Computes "due for follow-up" reminders
 
 Run locally:
     pip install -r requirements.txt
@@ -24,6 +25,7 @@ import requests
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from dotenv import load_dotenv
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -72,6 +74,18 @@ def init_db():
             status TEXT DEFAULT 'Applied',   -- Applied / Interview / Offer / Rejected
             notes TEXT,
             created_at TEXT
+        )
+        """
+    )
+    # Single-row table holding the user's most recently uploaded/pasted resume,
+    # so they never have to re-upload it on their next visit.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS resume (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            filename TEXT,
+            resume_text TEXT,
+            updated_at TEXT
         )
         """
     )
@@ -160,7 +174,9 @@ def health():
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
-    """Step 1: paste job description + resume -> get AI extraction & match score."""
+    """Step 1: paste job description + resume -> get AI extraction & match score.
+    Both fields are required -- there's no useful match score without a resume,
+    and nothing to analyze without a job description."""
     payload = request.get_json(force=True) or {}
     job_description = payload.get("job_description", "").strip()
     resume_text = payload.get("resume_text", "").strip()
@@ -168,10 +184,58 @@ def analyze():
 
     if not job_description:
         return jsonify({"error": "job_description is required"}), 400
+    if not resume_text:
+        return jsonify({"error": "resume_text is required"}), 400
 
     result = call_groq(job_description, resume_text)
     result["job_link"] = job_link
     return jsonify(result)
+
+
+@app.route("/api/resume", methods=["GET"])
+def get_resume():
+    """Return the user's previously saved resume (if any) so the frontend
+    can prefill it and the user never has to re-upload/retype it."""
+    db = get_db()
+    row = db.execute("SELECT * FROM resume WHERE id = 1").fetchone()
+    if not row:
+        return jsonify({"filename": "", "resume_text": "", "updated_at": ""})
+    return jsonify(dict(row))
+
+
+@app.route("/api/resume/upload", methods=["POST"])
+def upload_resume():
+    """Accept a PDF resume, extract its text with pypdf, and save it (overwriting
+    any previous resume) so it's available on future visits without re-uploading."""
+    file = request.files.get("file")
+    if not file or file.filename == "":
+        return jsonify({"error": "No file uploaded"}), 400
+    if not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files are supported"}), 400
+
+    try:
+        reader = PdfReader(file.stream)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+    except Exception as exc:
+        return jsonify({"error": f"Could not read PDF: {exc}"}), 400
+
+    if not text:
+        return jsonify({"error": "No selectable text found in this PDF (it may be a scanned image)."}), 400
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO resume (id, filename, resume_text, updated_at)
+        VALUES (1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            filename = excluded.filename,
+            resume_text = excluded.resume_text,
+            updated_at = excluded.updated_at
+        """,
+        (file.filename, text, datetime.utcnow().isoformat()),
+    )
+    db.commit()
+    return jsonify({"filename": file.filename, "resume_text": text})
 
 
 @app.route("/api/applications", methods=["GET"])

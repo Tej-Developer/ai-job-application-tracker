@@ -1,4 +1,11 @@
-# Trackr — AI Job Application Tracker (v1)
+# Trackr — AI Job Application Tracker (v1.1)
+
+> **v1.1 changelog:** upload your resume as a **PDF** instead of pasting text,
+> the resume is **saved on the backend** so you never re-upload it on your
+> next visit, and **job description + resume are now required** before you
+> can analyze or track a job. See [What's new in v1.1](#-whats-new-in-v11)
+> below for details.
+
 
 Students applying to 100+ companies lose track of what was applied to, when
 interviews are scheduled, when to follow up, and what got rejected. **Trackr**
@@ -28,6 +35,29 @@ touching the backend.
 > Note: v1 does not scrape job sites automatically (many block scraping /
 > require login). You paste the job description text — this keeps it
 > reliable and free. Auto-scraping from a URL can be added in v2.
+
+---
+
+## 🆕 What's new in v1.1
+
+| Feature | How it works |
+|---|---|
+| **Upload resume as PDF** | Click "Upload PDF resume" → the file is sent to the backend → text is extracted with `pypdf` → the resume textarea auto-fills. No manual copy-paste needed. |
+| **Resume is saved automatically** | Every upload overwrites a single saved resume row in SQLite. On your **next visit**, the app calls `GET /api/resume` on load and pre-fills the textarea for you — no re-upload required. |
+| **Required fields** | Job description and resume can no longer be empty. The frontend highlights missing fields in red and blocks the "Analyze" click; the backend also rejects the request with a 400 if either is blank (defense in depth). |
+
+New/changed API routes:
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/resume` | Returns the last saved resume (`filename`, `resume_text`, `updated_at`) |
+| POST | `/api/resume/upload` | Multipart form upload (`file`) → extracts PDF text via `pypdf`, saves it, returns the text |
+| POST | `/api/analyze` | Now returns **400** if `job_description` or `resume_text` is missing |
+
+> Note: only text-based PDFs are supported (i.e. not a scanned image of a
+> resume with no selectable text). If a scanned PDF is uploaded, the API
+> returns a clear error asking for a text-based PDF instead — OCR can be
+> added in a later version if needed.
 
 ---
 
@@ -180,6 +210,6 @@ provider later only requires editing that one function.
 
 ## 🛠 Tech stack summary
 
-- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn
+- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction)
 - **Frontend (v1)**: HTML, CSS, vanilla JavaScript (zero build step)
 - **Deployment**: Vercel (frontend), Render (backend)

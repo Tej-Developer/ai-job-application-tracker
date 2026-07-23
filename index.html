@@ -204,11 +204,17 @@
     <label for="job-link">Job link (optional)</label>
     <input type="text" id="job-link" placeholder="https://company.com/careers/role" />
 
-    <label for="job-desc">Job description</label>
-    <textarea id="job-desc" placeholder="Paste the full job description text here..."></textarea>
+    <label for="job-desc">Job description <span style="color:var(--rejected);">*</span></label>
+    <textarea id="job-desc" placeholder="Paste the full job description text here..." required></textarea>
 
-    <label for="resume-text">Your resume (paste as plain text)</label>
-    <textarea id="resume-text" placeholder="Paste your resume text here..."></textarea>
+    <label for="resume-text">Your resume <span style="color:var(--rejected);">*</span></label>
+    <div class="btn-row" style="margin-top:0;margin-bottom:8px;">
+      <button class="btn-ghost" id="upload-resume-btn" type="button">📄 Upload PDF resume</button>
+      <input type="file" id="resume-file" accept="application/pdf" style="display:none;" />
+      <span class="config-note" id="resume-upload-status"></span>
+    </div>
+    <textarea id="resume-text" placeholder="Upload a PDF above, or paste your resume text here..." required></textarea>
+    <span class="config-note" id="resume-saved-note"></span>
 
     <div class="btn-row">
       <button class="btn-primary" id="analyze-btn">Analyze with AI</button>
@@ -271,16 +277,63 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+// ---- Saved resume: load on start so the user never re-uploads it ----
+async function loadSavedResume() {
+  try {
+    const saved = await api("/api/resume");
+    if (saved.resume_text) {
+      el("resume-text").value = saved.resume_text;
+      el("resume-saved-note").textContent = `Using saved resume: ${saved.filename || "pasted text"} (uploaded ${new Date(saved.updated_at).toLocaleDateString()}). Upload a new PDF anytime to replace it.`;
+    }
+  } catch (err) {
+    console.warn("No saved resume yet", err);
+  }
+}
+
+// ---- PDF resume upload ----
+el("upload-resume-btn").addEventListener("click", () => el("resume-file").click());
+
+el("resume-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  el("resume-upload-status").textContent = "Reading PDF...";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/resume/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Upload failed");
+
+    el("resume-text").value = data.resume_text;
+    el("resume-upload-status").textContent = `✔ "${data.filename}" saved — it'll be here next time too.`;
+    el("resume-saved-note").textContent = "";
+  } catch (err) {
+    el("resume-upload-status").textContent = `Could not read that PDF: ${err.message}`;
+    console.error(err);
+  } finally {
+    e.target.value = ""; // allow re-uploading the same file name later
+  }
+});
+
 // ---- Step 1: Analyze ----
 el("analyze-btn").addEventListener("click", async () => {
   const job_description = el("job-desc").value.trim();
   const resume_text = el("resume-text").value.trim();
   const job_link = el("job-link").value.trim();
 
-  if (!job_description) {
-    el("analyze-status").textContent = "Paste a job description first.";
+  if (!job_description || !resume_text) {
+    el("analyze-status").textContent = "Job description and resume are both required.";
+    el("job-desc").style.borderColor = job_description ? "" : "var(--rejected)";
+    el("resume-text").style.borderColor = resume_text ? "" : "var(--rejected)";
     return;
   }
+  el("job-desc").style.borderColor = "";
+  el("resume-text").style.borderColor = "";
 
   el("analyze-status").textContent = "Analyzing with Groq...";
   el("analyze-btn").disabled = true;
@@ -434,6 +487,7 @@ function escapeHtml(str) {
 }
 
 // ---- Init ----
+loadSavedResume();
 loadApplications();
 loadReminders();
 </script>
