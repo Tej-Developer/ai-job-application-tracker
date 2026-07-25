@@ -1,10 +1,10 @@
-# Trackr — AI Job Application Tracker (v1.1)
+# Trackr — AI Job Application Tracker (v1.2)
 
-> **v1.1 changelog:** upload your resume as a **PDF** instead of pasting text,
-> the resume is **saved on the backend** so you never re-upload it on your
-> next visit, and **job description + resume are now required** before you
-> can analyze or track a job. See [What's new in v1.1](#-whats-new-in-v11)
-> below for details.
+> **v1.2 changelog:** automatic **email follow-up reminders** and a **weekly
+> digest** email, the ability to **edit the job description / resume**
+> snapshot after tracking an application, a **search & filter** toolbar, a
+> per-application **notes timeline**, and **CSV/Excel export**. See
+> [What's new in v1.2](#-whats-new-in-v12) below for details.
 
 
 Students applying to 100+ companies lose track of what was applied to, when
@@ -61,6 +61,45 @@ New/changed API routes:
 
 ---
 
+## 🆕 What's new in v1.2
+
+| Feature | How it works |
+|---|---|
+| **Auto-send follow-up emails** | A background scheduler (`APScheduler`, in-process) checks every day at 08:00 for applications whose follow-up date has arrived and emails you automatically via SMTP. Each application is only reminded once per day (`last_reminded_date` guard). |
+| **Weekly digest email** | Every Monday at 08:00, a summary email goes out: total applications, breakdown by status, average resume match score, and interviews coming up in the next 7 days. |
+| **Notification settings** | A new "Email reminders & weekly digest" panel lets you set your email and toggle reminders/digest independently — saved to the backend, no re-entry needed. |
+| **Edit job description / resume after tracking** | Click **Details** on any tracked application to expand an inline panel with editable job description and resume-snapshot fields. Save updates them in place. |
+| **Search & filter** | A search box (company/role) and a status dropdown filter the applications table live, backed by `?search=` and `?status=` query params on the list endpoint. |
+| **Notes timeline** | Each application now has a running activity log instead of one overwritable notes field — add free-text notes anytime, and status changes are logged automatically (e.g. "Status changed to Interview."). |
+| **Export to CSV/Excel** | An "Export CSV" button downloads all tracked applications as a `.csv` file — opens directly in Excel, Google Sheets, or Numbers. |
+
+New/changed API routes:
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET / POST | `/api/settings` | Get/save notification email + reminders/digest toggles |
+| GET | `/api/applications?search=&status=` | List applications, optionally filtered |
+| PUT | `/api/applications/<id>` | Now also accepts `job_description`, `resume_text`, and re-analysis fields (`match_score`, `skills`, `suggestions`); auto-logs a timeline entry on status change |
+| GET | `/api/applications/<id>/timeline` | List the notes/activity timeline for one application |
+| POST | `/api/applications/<id>/timeline` | Add a free-text note to the timeline |
+| GET | `/api/export/csv` | Download all applications as CSV |
+
+**Email setup (optional):** if you don't configure SMTP, reminder/digest
+emails are simply logged to the console instead of sent — nothing breaks.
+To enable real emails, fill in the SMTP variables in `.env` (see
+`.env.example`). For Gmail, use an **App Password**, not your regular
+password (Google account → Security → App Passwords).
+
+> ⚠️ **Scheduler note:** the daily/weekly jobs run inside the Flask process
+> via `APScheduler`. On Render's **free** tier, web services spin down after
+> a period of no traffic and spin back up on the next request — so a
+> scheduled job won't fire while the service is asleep. For reliable
+> scheduling in production, either upgrade to a Render plan that stays
+> always-on, or replace the in-process scheduler with a Render **Cron Job**
+> that calls a small `/api/run-reminders` trigger endpoint on a schedule.
+
+---
+
 ## 🏗 Architecture
 
 ```
@@ -78,7 +117,7 @@ New/changed API routes:
                               └────────────────┘                        └──────────────────┘
 ```
 
-**Automation pipeline (implemented in v1):**
+**Automation pipeline (implemented through v1.2):**
 
 ```
 Paste Job Description + Resume
@@ -91,9 +130,13 @@ Calculate Match Score              (Groq)
         ↓
 Suggest Improvements               (Groq)
         ↓
-Track Application                  (SQLite)
+Track Application                  (SQLite + auto timeline entry)
         ↓
-Show Follow-up Reminder            (rule-based, computed on load)
+Show Follow-up Reminder            (in-app banner, computed on load)
+        ↓
+Auto-email Follow-up Reminder       (daily scheduled job, SMTP)
+        ↓
+Auto-email Weekly Digest             (Monday scheduled job, SMTP)
 ```
 
 ---
@@ -124,7 +167,8 @@ cd backend
 python -m venv venv && source venv/bin/activate   # optional but recommended
 pip install -r requirements.txt
 cp .env.example .env
-# edit .env and paste your free Groq API key (https://console.groq.com/keys)
+# edit .env: paste your free Groq API key (https://console.groq.com/keys)
+# and optionally your SMTP details to enable real reminder/digest emails
 python app.py
 ```
 
@@ -154,7 +198,7 @@ loads by adding this in `index.html` (already wired to read it):
 3. Render auto-detects `render.yaml`. Otherwise set manually:
    - Build command: `pip install -r requirements.txt`
    - Start command: `gunicorn app:app --bind 0.0.0.0:$PORT`
-4. Add environment variable `GROQ_API_KEY` in the Render dashboard.
+4. Add environment variable `GROQ_API_KEY` in the Render dashboard (and, optionally, `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM` to enable real reminder/digest emails — see `.env.example`).
 5. Deploy → copy the generated URL (e.g. `https://job-tracker-backend.onrender.com`).
 
 > ⚠️ SQLite on Render's free tier is **ephemeral** (resets on redeploy/restart).
@@ -179,11 +223,17 @@ loads by adding this in `index.html` (already wired to read it):
 |---|---|---|
 | GET | `/api/health` | Health check |
 | POST | `/api/analyze` | `{job_description, resume_text, job_link}` → AI extraction + match score |
-| GET | `/api/applications` | List all tracked applications |
+| GET | `/api/resume` | Get the saved resume (prefill on load) |
+| POST | `/api/resume/upload` | Upload a PDF resume → extracts & saves text |
+| GET / POST | `/api/settings` | Get/save notification email + reminders/digest toggles |
+| GET | `/api/applications?search=&status=` | List tracked applications, optionally filtered |
 | POST | `/api/applications` | Save a new tracked application |
-| PUT | `/api/applications/<id>` | Update dates / status / notes |
-| DELETE | `/api/applications/<id>` | Remove an application |
-| GET | `/api/reminders` | Applications whose follow-up date is due |
+| PUT | `/api/applications/<id>` | Update dates / status / notes / job description / resume snapshot / AI results |
+| DELETE | `/api/applications/<id>` | Remove an application (and its timeline) |
+| GET | `/api/applications/<id>/timeline` | List notes/activity log for one application |
+| POST | `/api/applications/<id>/timeline` | Add a note to the timeline |
+| GET | `/api/reminders` | Applications whose follow-up date is due (in-app banner) |
+| GET | `/api/export/csv` | Download all applications as CSV |
 
 ---
 
@@ -202,14 +252,16 @@ provider later only requires editing that one function.
 - **React Flow** knowledge graph: visualize applications as nodes (company → skills → status)
 - **Chart.js analytics**: response rate, average match score, applications per week
 - **Auto-scrape job links** (where legally/technically possible) instead of manual paste
-- **Email/SMS reminders** (currently in-app banner only) via a scheduled job (e.g. Render Cron)
+- **Reliable scheduling**: move off in-process `APScheduler` to a Render Cron Job for the reminder/digest jobs, so they run even on the free tier's sleep/wake cycle
 - **Auth** so multiple students can use one deployment with separate accounts
 - **PostgreSQL** instead of SQLite for persistent storage on Render
+- **Excel (.xlsx) export** alongside CSV, if users need native Excel formatting/formulas
+- **Resume version history** (keep last few uploads, not just the latest)
 
 ---
 
 ## 🛠 Tech stack summary
 
-- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction)
+- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction), APScheduler (scheduled jobs), smtplib (email)
 - **Frontend (v1)**: HTML, CSS, vanilla JavaScript (zero build step)
 - **Deployment**: Vercel (frontend), Render (backend)

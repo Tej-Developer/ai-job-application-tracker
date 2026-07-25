@@ -89,7 +89,9 @@
     background:var(--accent);
     color:#fff;
     font-size:0.75rem;
+    flex-shrink:0;
   }
+  .panel .sub{color:var(--muted);font-size:0.8rem;margin:-8px 0 14px;}
 
   label{
     display:block;
@@ -99,7 +101,7 @@
     text-transform:uppercase;
     letter-spacing:0.04em;
   }
-  input[type=text], textarea, select{
+  input[type=text], input[type=email], input[type=search], textarea, select{
     width:100%;
     padding:9px 11px;
     border:1px solid var(--line);
@@ -132,7 +134,8 @@
   .btn-secondary{background:var(--accent-soft);color:var(--accent);}
   .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
   .btn-danger{background:transparent;color:var(--rejected);border:1px solid #e0b7b7;}
-  .btn-row{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;}
+  .btn-sm{padding:6px 12px;font-size:0.78rem;}
+  .btn-row{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
   #analysis-result{margin-top:18px;display:none;}
   #analysis-result.show{display:block;}
@@ -156,6 +159,10 @@
   ul.suggestions{margin:10px 0 0;padding-left:18px;font-size:0.88rem;color:#3a3d43;}
   ul.suggestions li{margin-bottom:4px;}
 
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+  .toolbar input[type=search]{flex:1;min-width:180px;}
+  .toolbar select{width:auto;min-width:140px;}
+
   table{width:100%;border-collapse:collapse;font-size:0.86rem;}
   th{
     text-align:left;
@@ -168,6 +175,8 @@
   }
   td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
   tr:hover td{background:#faf9f6;}
+  tr.detail-row td{background:#faf9f5;}
+  tr.detail-row:hover td{background:#faf9f5;}
 
   .status-pill{
     padding:3px 10px;
@@ -185,6 +194,20 @@
   .empty-state{color:var(--muted);font-size:0.9rem;padding:20px 0;text-align:center;}
   footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:20px;}
   .config-note{font-size:0.72rem;color:var(--muted);margin-top:6px;}
+
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media (max-width:800px){.detail-grid{grid-template-columns:1fr;}}
+  .detail-grid textarea{min-height:120px;font-size:0.82rem;}
+  .timeline{list-style:none;margin:10px 0 0;padding:0;max-height:180px;overflow-y:auto;}
+  .timeline li{
+    font-size:0.8rem;
+    padding:6px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .timeline li .ts{color:var(--muted);font-size:0.7rem;display:block;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .checkbox-row input{width:auto;}
+  .checkbox-row label{margin:0;text-transform:none;font-size:0.85rem;color:var(--ink);}
 </style>
 </head>
 <body>
@@ -234,7 +257,37 @@
   </section>
 
   <section class="panel">
-    <h2><span class="num">2</span> Your applications</h2>
+    <h2><span class="num">2</span> Email reminders & weekly digest</h2>
+    <p class="sub">Trackr can automatically email you when a follow-up is due, and send a weekly summary every Monday. Set your email once here.</p>
+    <label for="notify-email">Your email</label>
+    <input type="email" id="notify-email" placeholder="you@example.com" />
+    <div class="checkbox-row">
+      <input type="checkbox" id="reminders-enabled" checked />
+      <label for="reminders-enabled">Email me when a follow-up is due</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="digest-enabled" checked />
+      <label for="digest-enabled">Email me a weekly digest (Mondays)</label>
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" id="save-settings-btn">Save preferences</button>
+      <span class="config-note" id="settings-status"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="num">3</span> Your applications</h2>
+    <div class="toolbar">
+      <input type="search" id="search-input" placeholder="Search by company or role..." />
+      <select id="status-filter">
+        <option value="">All statuses</option>
+        <option value="Applied">Applied</option>
+        <option value="Interview">Interview</option>
+        <option value="Offer">Offer</option>
+        <option value="Rejected">Rejected</option>
+      </select>
+      <button class="btn-ghost btn-sm" id="export-csv-btn">⬇ Export CSV</button>
+    </div>
     <div id="table-wrap">
       <table id="app-table">
         <thead>
@@ -256,7 +309,7 @@
   </section>
 </main>
 
-<footer>Trackr v1 · Backend: Flask + Groq · Frontend: static HTML/JS · Built for students juggling 100+ applications.</footer>
+<footer>Trackr v1.2 · Backend: Flask + Groq · Frontend: static HTML/JS · Built for students juggling 100+ applications.</footer>
 
 <script>
 // ---------------------------------------------------------------------
@@ -267,6 +320,7 @@ const API_BASE_URL = window.API_BASE_URL || "http://localhost:5000";
 
 const el = (id) => document.getElementById(id);
 let lastAnalysis = null;
+let openDetailId = null; // which application row currently has its detail panel expanded
 
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -343,7 +397,7 @@ el("analyze-btn").addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ job_description, resume_text, job_link }),
     });
-    lastAnalysis = { ...data, job_description };
+    lastAnalysis = { ...data, job_description, resume_text };
     renderAnalysis(data);
     el("analyze-status").textContent = "Done.";
   } catch (err) {
@@ -390,6 +444,7 @@ el("track-btn").addEventListener("click", async () => {
         job_title: lastAnalysis.job_title,
         job_link: lastAnalysis.job_link,
         job_description: lastAnalysis.job_description,
+        resume_text: lastAnalysis.resume_text,
         skills: lastAnalysis.skills,
         match_score: lastAnalysis.match_score,
         suggestions: lastAnalysis.suggestions,
@@ -408,9 +463,58 @@ el("track-btn").addEventListener("click", async () => {
   }
 });
 
+// ---- Notification settings (auto-reminders + weekly digest) ----
+async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    el("notify-email").value = s.notification_email || "";
+    el("reminders-enabled").checked = !!s.reminders_enabled;
+    el("digest-enabled").checked = !!s.digest_enabled;
+  } catch (err) {
+    console.warn("Could not load settings", err);
+  }
+}
+
+el("save-settings-btn").addEventListener("click", async () => {
+  el("settings-status").textContent = "Saving...";
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        notification_email: el("notify-email").value.trim(),
+        reminders_enabled: el("reminders-enabled").checked,
+        digest_enabled: el("digest-enabled").checked,
+      }),
+    });
+    el("settings-status").textContent = "Saved.";
+  } catch (err) {
+    el("settings-status").textContent = "Could not save preferences.";
+    console.error(err);
+  }
+});
+
+// ---- Search & filter ----
+let searchDebounce = null;
+el("search-input").addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(loadApplications, 300);
+});
+el("status-filter").addEventListener("change", loadApplications);
+
+// ---- CSV export ----
+el("export-csv-btn").addEventListener("click", () => {
+  window.open(`${API_BASE_URL}/api/export/csv`, "_blank");
+});
+
 // ---- Applications table ----
 async function loadApplications() {
-  const apps = await api("/api/applications");
+  const search = el("search-input").value.trim();
+  const status = el("status-filter").value;
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (status) params.set("status", status);
+
+  const apps = await api(`/api/applications?${params.toString()}`);
   const tbody = el("app-tbody");
   tbody.innerHTML = "";
   el("empty-state").style.display = apps.length ? "none" : "block";
@@ -431,9 +535,18 @@ async function loadApplications() {
           ).join("")}
         </select>
       </td>
-      <td><button class="btn-danger" data-id="${a.id}" data-action="delete">Delete</button></td>
+      <td style="white-space:nowrap;">
+        <button class="btn-ghost btn-sm" data-id="${a.id}" data-action="toggle-details">Details</button>
+        <button class="btn-danger btn-sm" data-id="${a.id}" data-action="delete">Delete</button>
+      </td>
     `;
     tbody.appendChild(tr);
+
+    // re-open the detail row if it was open before this refresh (e.g. after saving a note)
+    if (openDetailId === a.id) {
+      const detailTr = buildDetailRow(a);
+      tbody.appendChild(detailTr);
+    }
   });
 
   tbody.querySelectorAll("input[data-field]").forEach((input) => {
@@ -460,11 +573,103 @@ async function loadApplications() {
   tbody.querySelectorAll("[data-action='delete']").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       if (!confirm("Delete this application?")) return;
+      if (openDetailId === Number(e.target.dataset.id)) openDetailId = null;
       await api(`/api/applications/${e.target.dataset.id}`, { method: "DELETE" });
       loadApplications();
       loadReminders();
     });
   });
+
+  tbody.querySelectorAll("[data-action='toggle-details']").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = Number(e.target.dataset.id);
+      openDetailId = openDetailId === id ? null : id;
+      loadApplications();
+    });
+  });
+}
+
+// ---- Expandable detail row: edit job description / resume + notes timeline ----
+function buildDetailRow(a) {
+  const tr = document.createElement("tr");
+  tr.className = "detail-row";
+  tr.innerHTML = `
+    <td colspan="8">
+      <div class="detail-grid">
+        <div>
+          <label>Job description</label>
+          <textarea data-detail="job_description" data-id="${a.id}">${escapeHtml(a.job_description || "")}</textarea>
+          <label>Resume snapshot used for this application</label>
+          <textarea data-detail="resume_text" data-id="${a.id}">${escapeHtml(a.resume_text || "")}</textarea>
+          <div class="btn-row">
+            <button class="btn-secondary btn-sm" data-action="save-detail" data-id="${a.id}">Save changes</button>
+            <span class="config-note" data-save-status="${a.id}"></span>
+          </div>
+        </div>
+        <div>
+          <label>Notes timeline</label>
+          <ul class="timeline" id="timeline-${a.id}"><li>Loading...</li></ul>
+          <div class="btn-row" style="margin-top:10px;">
+            <input type="text" placeholder="Add a note (e.g. 'recruiter replied')..." data-note-input="${a.id}" style="flex:1;">
+            <button class="btn-secondary btn-sm" data-action="add-note" data-id="${a.id}">Add note</button>
+          </div>
+        </div>
+      </div>
+    </td>
+  `;
+
+  loadTimeline(a.id);
+
+  tr.querySelector(`[data-action="save-detail"]`).addEventListener("click", async (e) => {
+    const id = e.target.dataset.id;
+    const statusEl = tr.querySelector(`[data-save-status="${id}"]`);
+    statusEl.textContent = "Saving...";
+    try {
+      await api(`/api/applications/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          job_description: tr.querySelector(`[data-detail="job_description"]`).value,
+          resume_text: tr.querySelector(`[data-detail="resume_text"]`).value,
+        }),
+      });
+      statusEl.textContent = "Saved.";
+    } catch (err) {
+      statusEl.textContent = "Could not save.";
+      console.error(err);
+    }
+  });
+
+  tr.querySelector(`[data-action="add-note"]`).addEventListener("click", async (e) => {
+    const id = e.target.dataset.id;
+    const input = tr.querySelector(`[data-note-input="${id}"]`);
+    const note = input.value.trim();
+    if (!note) return;
+    try {
+      await api(`/api/applications/${id}/timeline`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      });
+      input.value = "";
+      loadTimeline(id);
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  return tr;
+}
+
+async function loadTimeline(appId) {
+  try {
+    const events = await api(`/api/applications/${appId}/timeline`);
+    const list = document.getElementById(`timeline-${appId}`);
+    if (!list) return;
+    list.innerHTML = events.length
+      ? events.map((ev) => `<li><span class="ts">${new Date(ev.created_at).toLocaleString()}</span>${escapeHtml(ev.note)}</li>`).join("")
+      : "<li>No notes yet.</li>";
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 // ---- Reminders ----
@@ -488,6 +693,7 @@ function escapeHtml(str) {
 
 // ---- Init ----
 loadSavedResume();
+loadSettings();
 loadApplications();
 loadReminders();
 </script>
