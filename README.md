@@ -1,10 +1,10 @@
-# Trackr — AI Job Application Tracker (v1.2)
+# Trackr — AI Job Application Tracker (v1.3)
 
-> **v1.2 changelog:** automatic **email follow-up reminders** and a **weekly
-> digest** email, the ability to **edit the job description / resume**
-> snapshot after tracking an application, a **search & filter** toolbar, a
-> per-application **notes timeline**, and **CSV/Excel export**. See
-> [What's new in v1.2](#-whats-new-in-v12) below for details.
+> **v1.3 changelog:** added **authentication**. Every user now registers
+> with an email + password, logs in, and gets a private account — their
+> resume, tracked applications, notes, and notification settings are no
+> longer shared with other visitors. See
+> [What's new in v1.3](#-whats-new-in-v13) below for details.
 
 
 Students applying to 100+ companies lose track of what was applied to, when
@@ -100,6 +100,50 @@ password (Google account → Security → App Passwords).
 
 ---
 
+## 🆕 What's new in v1.3
+
+| Feature | How it works |
+|---|---|
+| **Accounts (email + password)** | New `/api/auth/register` and `/api/auth/login` routes create/verify accounts. Passwords are hashed with Werkzeug's `generate_password_hash` (never stored in plain text). |
+| **Login tokens (JWT)** | On login/register you get a signed JSON Web Token (`PyJWT`), valid for 7 days. The frontend stores it in `localStorage` and sends it as `Authorization: Bearer <token>` on every request. |
+| **Private data per user** | Every table (`applications`, `resume`, `settings`, `timeline`) is now scoped by `user_id`. A `login_required` decorator on every data route rejects requests without a valid token, and ownership is checked before any read/edit/delete — one user can never see or modify another user's data. |
+| **Login/register screen** | The frontend now shows a login/register form until you're authenticated, then reveals the app with your email + a "Log out" button in the header. |
+
+**Before this version**, the tracker had one shared SQLite database — every
+visitor saw the same resume, applications, and settings. **Now**, each
+account only ever sees its own data, verified end-to-end (tested that user
+B gets a 404, not user A's data, when trying to read/edit/delete something
+they don't own).
+
+New/changed API routes:
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | `{email, password}` → creates an account, returns a token |
+| POST | `/api/auth/login` | `{email, password}` → verifies credentials, returns a token |
+| GET | `/api/auth/me` | Returns the logged-in user's profile (used to restore a session on page load) |
+| *(all previous routes)* | — | Now require `Authorization: Bearer <token>` and are scoped to the logged-in user |
+
+**Environment setup:** add a `SECRET_KEY` to `.env` (used to sign tokens).
+Generate one with:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+If `SECRET_KEY` isn't set, the app falls back to an insecure dev default and
+prints a warning — fine for local testing, but **must** be set to a real
+random value before deploying, or anyone could forge a valid login token.
+
+> ⚠️ **Upgrading from v1.2:** the old `resume` and `settings` tables used a
+> single shared row and are schema-incompatible with per-user data. On
+> first run, v1.3 automatically detects and drops those old tables (any
+> previously shared resume/settings will need to be re-entered per
+> account). Tracked applications are preserved but won't show up for anyone
+> until assigned a `user_id` — since Render's free-tier SQLite is ephemeral
+> anyway, the simplest path is to just start fresh (delete `tracker.db`
+> locally, or let Render's redeploy reset it).
+
+---
+
 ## 🏗 Architecture
 
 ```
@@ -167,7 +211,8 @@ cd backend
 python -m venv venv && source venv/bin/activate   # optional but recommended
 pip install -r requirements.txt
 cp .env.example .env
-# edit .env: paste your free Groq API key (https://console.groq.com/keys)
+# edit .env: set SECRET_KEY (see the v1.3 section above for how to generate one),
+# paste your free Groq API key (https://console.groq.com/keys),
 # and optionally your SMTP details to enable real reminder/digest emails
 python app.py
 ```
@@ -198,7 +243,7 @@ loads by adding this in `index.html` (already wired to read it):
 3. Render auto-detects `render.yaml`. Otherwise set manually:
    - Build command: `pip install -r requirements.txt`
    - Start command: `gunicorn app:app --bind 0.0.0.0:$PORT`
-4. Add environment variable `GROQ_API_KEY` in the Render dashboard (and, optionally, `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM` to enable real reminder/digest emails — see `.env.example`).
+4. Add environment variables in the Render dashboard: `GROQ_API_KEY`, and **`SECRET_KEY`** (required — generate with `python -c "import secrets; print(secrets.token_hex(32))"`). Optionally add `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM` to enable real reminder/digest emails — see `.env.example`.
 5. Deploy → copy the generated URL (e.g. `https://job-tracker-backend.onrender.com`).
 
 > ⚠️ SQLite on Render's free tier is **ephemeral** (resets on redeploy/restart).
@@ -219,9 +264,16 @@ loads by adding this in `index.html` (already wired to read it):
 
 ## 🔌 API reference (backend)
 
+All routes below (except `/api/health` and `/api/auth/*`) require an
+`Authorization: Bearer <token>` header and only return/modify data owned
+by the logged-in user.
+
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/api/health` | Health check |
+| GET | `/api/health` | Health check (public) |
+| POST | `/api/auth/register` | `{email, password}` → create account, returns a token |
+| POST | `/api/auth/login` | `{email, password}` → verify login, returns a token |
+| GET | `/api/auth/me` | Current user's profile (used to restore a session) |
 | POST | `/api/analyze` | `{job_description, resume_text, job_link}` → AI extraction + match score |
 | GET | `/api/resume` | Get the saved resume (prefill on load) |
 | POST | `/api/resume/upload` | Upload a PDF resume → extracts & saves text |
@@ -248,13 +300,14 @@ provider later only requires editing that one function.
 
 ## 🗺 Roadmap (v2+, per original project brief)
 
+- **Modern frontend redesign**: dashboard layout, stat cards, slide-over detail panel, color-coded score/status, toasts instead of alerts (next up)
 - **Frontend rewrite**: React + Tailwind CSS (component-based, same REST API)
 - **React Flow** knowledge graph: visualize applications as nodes (company → skills → status)
 - **Chart.js analytics**: response rate, average match score, applications per week
 - **Auto-scrape job links** (where legally/technically possible) instead of manual paste
 - **Reliable scheduling**: move off in-process `APScheduler` to a Render Cron Job for the reminder/digest jobs, so they run even on the free tier's sleep/wake cycle
-- **Auth** so multiple students can use one deployment with separate accounts
-- **PostgreSQL** instead of SQLite for persistent storage on Render
+- **Password reset / email verification** — currently there's no "forgot password" flow
+- **PostgreSQL** instead of SQLite for persistent, non-ephemeral storage on Render
 - **Excel (.xlsx) export** alongside CSV, if users need native Excel formatting/formulas
 - **Resume version history** (keep last few uploads, not just the latest)
 
@@ -262,6 +315,6 @@ provider later only requires editing that one function.
 
 ## 🛠 Tech stack summary
 
-- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction), APScheduler (scheduled jobs), smtplib (email)
+- **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction), APScheduler (scheduled jobs), smtplib (email), PyJWT + Werkzeug security (authentication)
 - **Frontend (v1)**: HTML, CSS, vanilla JavaScript (zero build step)
 - **Deployment**: Vercel (frontend), Render (backend)
