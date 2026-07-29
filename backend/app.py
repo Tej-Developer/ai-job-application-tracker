@@ -21,6 +21,7 @@ Run locally:
 """
 
 import os
+import re
 import io
 import csv
 import json
@@ -98,6 +99,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
+            username TEXT UNIQUE,
             password_hash TEXT NOT NULL,
             created_at TEXT
         )
@@ -175,6 +177,10 @@ def init_db():
     ):
         if col not in app_cols:
             conn.execute(ddl)
+
+    user_cols = _table_columns(conn, "users")
+    if "username" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
 
     # The old `resume` / `settings` tables (pre-v1.3) used a fixed single row
     # (id = 1) shared by everyone. That schema is incompatible with per-user
@@ -436,25 +442,46 @@ scheduler.add_job(send_weekly_digest, "cron", day_of_week="mon", hour=8, minute=
 # Auth routes
 # ----------------------------------------------------------------------
 
+def _unique_username_from_email(db, email):
+    """Auto-generate a username from the email prefix if the user didn't
+    pick one, making sure it doesn't collide with an existing username."""
+    base = re.sub(r"[^a-zA-Z0-9_]", "", email.split("@")[0]) or "user"
+    candidate = base
+    i = 1
+    while db.execute("SELECT id FROM users WHERE username = ?", (candidate,)).fetchone():
+        i += 1
+        candidate = f"{base}{i}"
+    return candidate
+
+
 @app.route("/api/auth/register", methods=["POST"])
 def register():
     payload = request.get_json(force=True) or {}
     email = (payload.get("email") or "").strip().lower()
     password = payload.get("password") or ""
+    username = (payload.get("username") or "").strip()
 
     if not email or "@" not in email:
         return jsonify({"error": "A valid email is required"}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
+    if username and not re.match(r"^[a-zA-Z0-9_]{3,20}$", username):
+        return jsonify({"error": "Username must be 3-20 characters (letters, numbers, underscore only)"}), 400
 
     db = get_db()
     existing = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     if existing:
         return jsonify({"error": "An account with this email already exists"}), 409
 
+    if username:
+        if db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
+            return jsonify({"error": "That username is already taken"}), 409
+    else:
+        username = _unique_username_from_email(db, email)
+
     cur = db.execute(
-        "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
-        (email, generate_password_hash(password), datetime.utcnow().isoformat()),
+        "INSERT INTO users (email, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+        (email, username, generate_password_hash(password), datetime.utcnow().isoformat()),
     )
     db.commit()
     user_id = cur.lastrowid
@@ -467,7 +494,7 @@ def register():
     db.commit()
 
     token = generate_token(user_id)
-    return jsonify({"token": token, "email": email}), 201
+    return jsonify({"token": token, "email": email, "username": username}), 201
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -482,17 +509,62 @@ def login():
         return jsonify({"error": "Invalid email or password"}), 401
 
     token = generate_token(user["id"])
-    return jsonify({"token": token, "email": user["email"]})
+    return jsonify({"token": token, "email": user["email"], "username": user["username"]})
 
 
 @app.route("/api/auth/me", methods=["GET"])
 @login_required
 def me():
     db = get_db()
-    user = db.execute("SELECT id, email, created_at FROM users WHERE id = ?", (g.user_id,)).fetchone()
+    user = db.execute(
+        "SELECT id, email, username, created_at FROM users WHERE id = ?", (g.user_id,)
+    ).fetchone()
     if not user:
         return jsonify({"error": "not found"}), 404
     return jsonify(dict(user))
+
+
+@app.route("/api/auth/profile", methods=["PUT"])
+@login_required
+def update_profile():
+    """Update the logged-in user's username and/or password. Changing the
+    password requires the current password for confirmation."""
+    payload = request.get_json(force=True) or {}
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (g.user_id,)).fetchone()
+    if not user:
+        return jsonify({"error": "not found"}), 404
+
+    updates = {}
+
+    if "username" in payload:
+        new_username = (payload.get("username") or "").strip()
+        if not re.match(r"^[a-zA-Z0-9_]{3,20}$", new_username):
+            return jsonify({"error": "Username must be 3-20 characters (letters, numbers, underscore only)"}), 400
+        clash = db.execute(
+            "SELECT id FROM users WHERE username = ? AND id != ?", (new_username, g.user_id)
+        ).fetchone()
+        if clash:
+            return jsonify({"error": "That username is already taken"}), 409
+        updates["username"] = new_username
+
+    if payload.get("new_password"):
+        current_password = payload.get("current_password") or ""
+        if not check_password_hash(user["password_hash"], current_password):
+            return jsonify({"error": "Current password is incorrect"}), 401
+        if len(payload["new_password"]) < 6:
+            return jsonify({"error": "New password must be at least 6 characters"}), 400
+        updates["password_hash"] = generate_password_hash(payload["new_password"])
+
+    if updates:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        db.execute(f"UPDATE users SET {set_clause} WHERE id = ?", (*updates.values(), g.user_id))
+        db.commit()
+
+    row = db.execute(
+        "SELECT id, email, username, created_at FROM users WHERE id = ?", (g.user_id,)
+    ).fetchone()
+    return jsonify(dict(row))
 
 
 # ----------------------------------------------------------------------

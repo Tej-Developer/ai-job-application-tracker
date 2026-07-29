@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trackr — AI Job Application Tracker</title>
+<style>
+  :root{
+    --ink:#1c1f26;
+    --paper:#f6f5f1;
+    --panel:#ffffff;
+    --line:#e2e0d8;
+    --accent:#2e5339;      /* deep pine green */
+    --accent-soft:#d9e6dc;
+    --warn:#b3541e;        /* burnt orange for reminders */
+    --warn-soft:#f3e0d2;
+    --muted:#6b6f76;
+    --applied:#5b6b8a;
+    --interview:#9c7a2e;
+    --offer:#2e7d5b;
+    --rejected:#a44242;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  header{
+    padding:28px 32px 18px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  header h1{
+    font-family:Georgia, 'Times New Roman', serif;
+    font-size:1.6rem;
+    margin:0;
+    letter-spacing:0.3px;
+  }
+  header h1 span{color:var(--accent);}
+  header p{margin:0;color:var(--muted);font-size:0.85rem;}
+
+  main{
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px 24px 60px;
+    display:grid;
+    gap:24px;
+  }
+
+  #reminder-bar{
+    display:none;
+    background:var(--warn-soft);
+    border:1px solid #e3b393;
+    color:#6e3210;
+    padding:12px 16px;
+    border-radius:var(--radius);
+    font-size:0.9rem;
+  }
+  #reminder-bar.show{display:block;}
+  #reminder-bar strong{display:block;margin-bottom:4px;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:22px 24px;
+  }
+  .panel h2{
+    font-family:Georgia, serif;
+    font-size:1.05rem;
+    margin:0 0 14px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .panel h2 .num{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:22px;height:22px;
+    border-radius:50%;
+    background:var(--accent);
+    color:#fff;
+    font-size:0.75rem;
+    flex-shrink:0;
+  }
+  .panel .sub{color:var(--muted);font-size:0.8rem;margin:-8px 0 14px;}
+
+  label{
+    display:block;
+    font-size:0.78rem;
+    color:var(--muted);
+    margin:12px 0 4px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+  }
+  input[type=text], input[type=email], input[type=search], textarea, select{
+    width:100%;
+    padding:9px 11px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-size:0.9rem;
+    font-family:inherit;
+    background:#fdfdfc;
+    color:var(--ink);
+  }
+  textarea{resize:vertical;min-height:90px;}
+  input:focus, textarea:focus, select:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:700px){.row{grid-template-columns:1fr;}}
+
+  button{
+    cursor:pointer;
+    border:none;
+    border-radius:6px;
+    padding:10px 18px;
+    font-size:0.88rem;
+    font-weight:600;
+    font-family:inherit;
+  }
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:#233f2b;}
+  .btn-secondary{background:var(--accent-soft);color:var(--accent);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
+  .btn-danger{background:transparent;color:var(--rejected);border:1px solid #e0b7b7;}
+  .btn-sm{padding:6px 12px;font-size:0.78rem;}
+  .btn-row{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+  #analysis-result{margin-top:18px;display:none;}
+  #analysis-result.show{display:block;}
+  .score-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size:1.4rem;
+    font-weight:700;
+    color:var(--accent);
+  }
+  .score-badge small{font-size:0.7rem;color:var(--muted);font-weight:400;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .chip{
+    background:var(--accent-soft);
+    color:var(--accent);
+    padding:4px 10px;
+    border-radius:20px;
+    font-size:0.78rem;
+  }
+  ul.suggestions{margin:10px 0 0;padding-left:18px;font-size:0.88rem;color:#3a3d43;}
+  ul.suggestions li{margin-bottom:4px;}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+  .toolbar input[type=search]{flex:1;min-width:180px;}
+  .toolbar select{width:auto;min-width:140px;}
+
+  table{width:100%;border-collapse:collapse;font-size:0.86rem;}
+  th{
+    text-align:left;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:var(--muted);
+    padding:8px 10px;
+    border-bottom:2px solid var(--line);
+  }
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  tr:hover td{background:#faf9f6;}
+  tr.detail-row td{background:#faf9f5;}
+  tr.detail-row:hover td{background:#faf9f5;}
+
+  .status-pill{
+    padding:3px 10px;
+    border-radius:20px;
+    font-size:0.74rem;
+    font-weight:600;
+    border:1px solid transparent;
+  }
+  .status-Applied{background:#eaeef5;color:var(--applied);}
+  .status-Interview{background:#f7edd8;color:var(--interview);}
+  .status-Offer{background:#e1f0e6;color:var(--offer);}
+  .status-Rejected{background:#f5e2e2;color:var(--rejected);}
+
+  .mini-input{padding:5px 7px;font-size:0.8rem;}
+  .empty-state{color:var(--muted);font-size:0.9rem;padding:20px 0;text-align:center;}
+  footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:20px;}
+  .config-note{font-size:0.72rem;color:var(--muted);margin-top:6px;}
+
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media (max-width:800px){.detail-grid{grid-template-columns:1fr;}}
+  .detail-grid textarea{min-height:120px;font-size:0.82rem;}
+  .timeline{list-style:none;margin:10px 0 0;padding:0;max-height:180px;overflow-y:auto;}
+  .timeline li{
+    font-size:0.8rem;
+    padding:6px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .timeline li .ts{color:var(--muted);font-size:0.7rem;display:block;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .checkbox-row input{width:auto;}
+  .checkbox-row label{margin:0;text-transform:none;font-size:0.85rem;color:var(--ink);}
+
+  /* ---- Auth screen ---- */
+  #auth-screen{
+    max-width:380px;
+    margin:80px auto;
+    padding:0 20px;
+  }
+  #auth-screen .panel{padding:28px 26px;}
+  #auth-screen h1{
+    font-family:Georgia, serif;
+    font-size:1.5rem;
+    margin:0 0 4px;
+    text-align:center;
+  }
+  #auth-screen h1 span{color:var(--accent);}
+  #auth-screen p.tagline{text-align:center;color:var(--muted);font-size:0.85rem;margin:0 0 20px;}
+  #auth-error{color:var(--rejected);font-size:0.82rem;margin-top:8px;min-height:1em;}
+  #auth-toggle{
+    text-align:center;
+    margin-top:14px;
+    font-size:0.85rem;
+    color:var(--muted);
+  }
+  #auth-toggle a{color:var(--accent);font-weight:600;text-decoration:none;cursor:pointer;}
+  .hidden{display:none !important;}
+  #user-badge{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:0.85rem;
+    color:var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<!-- ============== AUTH SCREEN (shown when logged out) ============== -->
+<div id="auth-screen">
+  <div class="panel">
+    <h1>Trackr<span>.</span></h1>
+    <p class="tagline">Sign in to track your job applications privately.</p>
+
+    <form id="auth-form">
+      <label for="auth-email">Email</label>
+      <input type="email" id="auth-email" required autocomplete="email" />
+
+      <label for="auth-password">Password</label>
+      <input type="password" id="auth-password" required autocomplete="current-password"
+             placeholder="At least 6 characters" />
+
+      <div id="auth-error"></div>
+
+      <div class="btn-row">
+        <button type="submit" class="btn-primary" id="auth-submit-btn" style="width:100%;justify-content:center;">Log in</button>
+      </div>
+    </form>
+
+    <div id="auth-toggle">
+      Don't have an account? <a id="auth-toggle-link">Create one</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============== MAIN APP (shown when logged in) ============== -->
+<div id="app-content" class="hidden">
+
+<header>
+  <div>
+    <h1>Trackr<span>.</span></h1>
+    <p>AI job application tracker — paste a job, get a match score, never miss a follow-up.</p>
+  </div>
+  <div id="user-badge">
+    <span id="user-email"></span>
+    <button class="btn-ghost btn-sm" id="logout-btn">Log out</button>
+  </div>
+</header>
+
+<main>
+  <div id="reminder-bar"></div>
+
+  <section class="panel">
+    <h2><span class="num">1</span> Paste a job + your resume</h2>
+    <label for="job-link">Job link (optional)</label>
+    <input type="text" id="job-link" placeholder="https://company.com/careers/role" />
+
+    <label for="job-desc">Job description <span style="color:var(--rejected);">*</span></label>
+    <textarea id="job-desc" placeholder="Paste the full job description text here..." required></textarea>
+
+    <label for="resume-text">Your resume <span style="color:var(--rejected);">*</span></label>
+    <div class="btn-row" style="margin-top:0;margin-bottom:8px;">
+      <button class="btn-ghost" id="upload-resume-btn" type="button">📄 Upload PDF resume</button>
+      <input type="file" id="resume-file" accept="application/pdf" style="display:none;" />
+      <span class="config-note" id="resume-upload-status"></span>
+    </div>
+    <textarea id="resume-text" placeholder="Upload a PDF above, or paste your resume text here..." required></textarea>
+    <span class="config-note" id="resume-saved-note"></span>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="analyze-btn">Analyze with AI</button>
+      <span class="config-note" id="analyze-status"></span>
+    </div>
+
+    <div id="analysis-result">
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0;">
+      <div><strong id="result-company">—</strong> <span id="result-title" style="color:var(--muted);"></span></div>
+      <div class="score-badge"><span id="result-score">0%</span><small>resume match</small></div>
+      <div class="chips" id="result-skills"></div>
+      <ul class="suggestions" id="result-suggestions"></ul>
+      <div class="btn-row">
+        <button class="btn-secondary" id="track-btn">Track this application</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="num">2</span> Email reminders & weekly digest</h2>
+    <p class="sub">Trackr can automatically email you when a follow-up is due, and send a weekly summary every Monday. Set your email once here.</p>
+    <label for="notify-email">Your email</label>
+    <input type="email" id="notify-email" placeholder="you@example.com" />
+    <div class="checkbox-row">
+      <input type="checkbox" id="reminders-enabled" checked />
+      <label for="reminders-enabled">Email me when a follow-up is due</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="digest-enabled" checked />
+      <label for="digest-enabled">Email me a weekly digest (Mondays)</label>
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" id="save-settings-btn">Save preferences</button>
+      <span class="config-note" id="settings-status"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="num">3</span> Your applications</h2>
+    <div class="toolbar">
+      <input type="search" id="search-input" placeholder="Search by company or role..." />
+      <select id="status-filter">
+        <option value="">All statuses</option>
+        <option value="Applied">Applied</option>
+        <option value="Interview">Interview</option>
+        <option value="Offer">Offer</option>
+        <option value="Rejected">Rejected</option>
+      </select>
+      <button class="btn-ghost btn-sm" id="export-csv-btn">⬇ Export CSV</button>
+    </div>
+    <div id="table-wrap">
+      <table id="app-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Role</th>
+            <th>Score</th>
+            <th>Applied</th>
+            <th>Interview</th>
+            <th>Follow-up</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="app-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="empty-state">No applications tracked yet — analyze a job above to get started.</div>
+    </div>
+  </section>
+</main>
+
+<footer>Trackr v1.3 · Backend: Flask + Groq · Frontend: static HTML/JS · Built for students juggling 100+ applications.</footer>
+
+</div><!-- /#app-content -->
+
+<script>
+// ---------------------------------------------------------------------
+// CONFIG: point this at your deployed Render backend URL.
+// Locally this defaults to the Flask dev server.
+// ---------------------------------------------------------------------
+const API_BASE_URL = window.API_BASE_URL || "https://ai-job-application-tracker-5wis.onrender.com";
+
+const el = (id) => document.getElementById(id);
+let lastAnalysis = null;
+let openDetailId = null; // which application row currently has its detail panel expanded
+
+// ---- Auth token storage ----
+// This is a real deployed web app (not an in-chat artifact), so localStorage
+// is the right place to persist the login token across visits.
+const TOKEN_KEY = "trackr_token";
+const EMAIL_KEY = "trackr_email";
+const getToken = () => localStorage.getItem(TOKEN_KEY);
+const setAuth = (token, email) => {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(EMAIL_KEY, email);
+};
+const clearAuth = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(EMAIL_KEY);
+};
+
+async function api(path, options = {}) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...options,
+  });
+  if (res.status === 401) {
+    // token missing/expired/invalid -- send the user back to the login screen
+    clearAuth();
+    showAuthScreen();
+    throw new Error("Session expired — please log in again.");
+  }
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+function showAuthScreen() {
+  el("auth-screen").classList.remove("hidden");
+  el("app-content").classList.add("hidden");
+}
+
+function showApp(email) {
+  el("auth-screen").classList.add("hidden");
+  el("app-content").classList.remove("hidden");
+  el("user-email").textContent = email || "";
+}
+
+// ---- Login / register form (single form, toggled between two modes) ----
+let authMode = "login"; // or "register"
+
+function renderAuthToggle() {
+  el("auth-submit-btn").textContent = authMode === "login" ? "Log in" : "Create account";
+  el("auth-toggle").innerHTML = authMode === "login"
+    ? `Don't have an account? <a id="auth-toggle-link">Create one</a>`
+    : `Already have an account? <a id="auth-toggle-link">Log in</a>`;
+  document.getElementById("auth-toggle-link").addEventListener("click", () => {
+    authMode = authMode === "login" ? "register" : "login";
+    el("auth-error").textContent = "";
+    renderAuthToggle();
+  });
+}
+renderAuthToggle();
+
+el("auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = el("auth-email").value.trim();
+  const password = el("auth-password").value;
+  const btn = el("auth-submit-btn");
+  el("auth-error").textContent = "";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/${authMode === "login" ? "login" : "register"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Something went wrong");
+
+    setAuth(data.token, data.email);
+    showApp(data.email);
+    initApp();
+  } catch (err) {
+    el("auth-error").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+el("logout-btn").addEventListener("click", () => {
+  clearAuth();
+  showAuthScreen();
+});
+
+// ---- Saved resume: load on start so the user never re-uploads it ----
+async function loadSavedResume() {
+  try {
+    const saved = await api("/api/resume");
+    if (saved.resume_text) {
+      el("resume-text").value = saved.resume_text;
+      el("resume-saved-note").textContent = `Using saved resume: ${saved.filename || "pasted text"} (uploaded ${new Date(saved.updated_at).toLocaleDateString()}). Upload a new PDF anytime to replace it.`;
+    }
+  } catch (err) {
+    console.warn("No saved resume yet", err);
+  }
+}
+
+// ---- PDF resume upload ----
+el("upload-resume-btn").addEventListener("click", () => el("resume-file").click());
+
+el("resume-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  el("resume-upload-status").textContent = "Reading PDF...";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/resume/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Upload failed");
+
+    el("resume-text").value = data.resume_text;
+    el("resume-upload-status").textContent = `✔ "${data.filename}" saved — it'll be here next time too.`;
+    el("resume-saved-note").textContent = "";
+  } catch (err) {
+    el("resume-upload-status").textContent = `Could not read that PDF: ${err.message}`;
+    console.error(err);
+  } finally {
+    e.target.value = ""; // allow re-uploading the same file name later
+  }
+});
+
+// ---- Step 1: Analyze ----
+el("analyze-btn").addEventListener("click", async () => {
+  const job_description = el("job-desc").value.trim();
+  const resume_text = el("resume-text").value.trim();
+  const job_link = el("job-link").value.trim();
+
+  if (!job_description || !resume_text) {
+    el("analyze-status").textContent = "Job description and resume are both required.";
+    el("job-desc").style.borderColor = job_description ? "" : "var(--rejected)";
+    el("resume-text").style.borderColor = resume_text ? "" : "var(--rejected)";
+    return;
+  }
+  el("job-desc").style.borderColor = "";
+  el("resume-text").style.borderColor = "";
+
+  el("analyze-status").textContent = "Analyzing with Groq...";
+  el("analyze-btn").disabled = true;
+
+  try {
+    const data = await api("/api/analyze", {
+      method: "POST",
+      body: JSON.stringify({ job_description, resume_text, job_link }),
+    });
+    lastAnalysis = { ...data, job_description, resume_text };
+    renderAnalysis(data);
+    el("analyze-status").textContent = "Done.";
+  } catch (err) {
+    el("analyze-status").textContent = "Analysis failed — check backend URL / API key.";
+    console.error(err);
+  } finally {
+    el("analyze-btn").disabled = false;
+  }
+});
+
+function renderAnalysis(data) {
+  el("result-company").textContent = data.company || "Unknown company";
+  el("result-title").textContent = data.job_title ? `· ${data.job_title}` : "";
+  el("result-score").textContent = `${data.match_score ?? 0}%`;
+
+  const skillsWrap = el("result-skills");
+  skillsWrap.innerHTML = "";
+  (data.skills || []).forEach((s) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = s;
+    skillsWrap.appendChild(chip);
+  });
+
+  const sugList = el("result-suggestions");
+  sugList.innerHTML = "";
+  (data.suggestions || []).forEach((s) => {
+    const li = document.createElement("li");
+    li.textContent = s;
+    sugList.appendChild(li);
+  });
+
+  el("analysis-result").classList.add("show");
+}
+
+// ---- Step 2: Track application ----
+el("track-btn").addEventListener("click", async () => {
+  if (!lastAnalysis) return;
+  try {
+    await api("/api/applications", {
+      method: "POST",
+      body: JSON.stringify({
+        company: lastAnalysis.company,
+        job_title: lastAnalysis.job_title,
+        job_link: lastAnalysis.job_link,
+        job_description: lastAnalysis.job_description,
+        resume_text: lastAnalysis.resume_text,
+        skills: lastAnalysis.skills,
+        match_score: lastAnalysis.match_score,
+        suggestions: lastAnalysis.suggestions,
+        applied_date: new Date().toISOString().slice(0, 10),
+        status: "Applied",
+      }),
+    });
+    el("job-desc").value = "";
+    el("job-link").value = "";
+    el("analysis-result").classList.remove("show");
+    loadApplications();
+    loadReminders();
+  } catch (err) {
+    alert("Could not save application. Check the backend connection.");
+    console.error(err);
+  }
+});
+
+// ---- Notification settings (auto-reminders + weekly digest) ----
+async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    el("notify-email").value = s.notification_email || "";
+    el("reminders-enabled").checked = !!s.reminders_enabled;
+    el("digest-enabled").checked = !!s.digest_enabled;
+  } catch (err) {
+    console.warn("Could not load settings", err);
+  }
+}
+
+el("save-settings-btn").addEventListener("click", async () => {
+  el("settings-status").textContent = "Saving...";
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        notification_email: el("notify-email").value.trim(),
+        reminders_enabled: el("reminders-enabled").checked,
+        digest_enabled: el("digest-enabled").checked,
+      }),
+    });
+    el("settings-status").textContent = "Saved.";
+  } catch (err) {
+    el("settings-status").textContent = "Could not save preferences.";
+    console.error(err);
+  }
+});
+
+// ---- Search & filter ----
+let searchDebounce = null;
+el("search-input").addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(loadApplications, 300);
+});
+el("status-filter").addEventListener("change", loadApplications);
+
+// ---- CSV export ----
+el("export-csv-btn").addEventListener("click", async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/export/csv`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "applications.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert("Could not export CSV. Check your connection and try again.");
+    console.error(err);
+  }
+});
+
+// ---- Applications table ----
+async function loadApplications() {
+  const search = el("search-input").value.trim();
+  const status = el("status-filter").value;
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (status) params.set("status", status);
+
+  const apps = await api(`/api/applications?${params.toString()}`);
+  const tbody = el("app-tbody");
+  tbody.innerHTML = "";
+  el("empty-state").style.display = apps.length ? "none" : "block";
+
+  apps.forEach((a) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(a.company)}</td>
+      <td>${escapeHtml(a.job_title || "-")}</td>
+      <td>${a.match_score ?? 0}%</td>
+      <td><input class="mini-input" type="date" value="${a.applied_date || ""}" data-field="applied_date" data-id="${a.id}"/></td>
+      <td><input class="mini-input" type="date" value="${a.interview_date || ""}" data-field="interview_date" data-id="${a.id}"/></td>
+      <td><input class="mini-input" type="date" value="${a.follow_up_date || ""}" data-field="follow_up_date" data-id="${a.id}"/></td>
+      <td>
+        <select class="mini-input status-select" data-id="${a.id}">
+          ${["Applied", "Interview", "Offer", "Rejected"].map(
+            (s) => `<option value="${s}" ${s === a.status ? "selected" : ""}>${s}</option>`
+          ).join("")}
+        </select>
+      </td>
+      <td style="white-space:nowrap;">
+        <button class="btn-ghost btn-sm" data-id="${a.id}" data-action="toggle-details">Details</button>
+        <button class="btn-danger btn-sm" data-id="${a.id}" data-action="delete">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    // re-open the detail row if it was open before this refresh (e.g. after saving a note)
+    if (openDetailId === a.id) {
+      const detailTr = buildDetailRow(a);
+      tbody.appendChild(detailTr);
+    }
+  });
+
+  tbody.querySelectorAll("input[data-field]").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      const { id, field } = e.target.dataset;
+      await api(`/api/applications/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ [field]: e.target.value }),
+      });
+      loadReminders();
+    });
+  });
+
+  tbody.querySelectorAll(".status-select").forEach((sel) => {
+    sel.addEventListener("change", async (e) => {
+      await api(`/api/applications/${e.target.dataset.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: e.target.value }),
+      });
+      loadReminders();
+    });
+  });
+
+  tbody.querySelectorAll("[data-action='delete']").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      if (!confirm("Delete this application?")) return;
+      if (openDetailId === Number(e.target.dataset.id)) openDetailId = null;
+      await api(`/api/applications/${e.target.dataset.id}`, { method: "DELETE" });
+      loadApplications();
+      loadReminders();
+    });
+  });
+
+  tbody.querySelectorAll("[data-action='toggle-details']").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = Number(e.target.dataset.id);
+      openDetailId = openDetailId === id ? null : id;
+      loadApplications();
+    });
+  });
+}
+
+// ---- Expandable detail row: edit job description / resume + notes timeline ----
+function buildDetailRow(a) {
+  const tr = document.createElement("tr");
+  tr.className = "detail-row";
+  tr.innerHTML = `
+    <td colspan="8">
+      <div class="detail-grid">
+        <div>
+          <label>Job description</label>
+          <textarea data-detail="job_description" data-id="${a.id}">${escapeHtml(a.job_description || "")}</textarea>
+          <label>Resume snapshot used for this application</label>
+          <textarea data-detail="resume_text" data-id="${a.id}">${escapeHtml(a.resume_text || "")}</textarea>
+          <div class="btn-row">
+            <button class="btn-secondary btn-sm" data-action="save-detail" data-id="${a.id}">Save changes</button>
+            <span class="config-note" data-save-status="${a.id}"></span>
+          </div>
+        </div>
+        <div>
+          <label>Notes timeline</label>
+          <ul class="timeline" id="timeline-${a.id}"><li>Loading...</li></ul>
+          <div class="btn-row" style="margin-top:10px;">
+            <input type="text" placeholder="Add a note (e.g. 'recruiter replied')..." data-note-input="${a.id}" style="flex:1;">
+            <button class="btn-secondary btn-sm" data-action="add-note" data-id="${a.id}">Add note</button>
+          </div>
+        </div>
+      </div>
+    </td>
+  `;
+
+  loadTimeline(a.id);
+
+  tr.querySelector(`[data-action="save-detail"]`).addEventListener("click", async (e) => {
+    const id = e.target.dataset.id;
+    const statusEl = tr.querySelector(`[data-save-status="${id}"]`);
+    statusEl.textContent = "Saving...";
+    try {
+      await api(`/api/applications/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          job_description: tr.querySelector(`[data-detail="job_description"]`).value,
+          resume_text: tr.querySelector(`[data-detail="resume_text"]`).value,
+        }),
+      });
+      statusEl.textContent = "Saved.";
+    } catch (err) {
+      statusEl.textContent = "Could not save.";
+      console.error(err);
+    }
+  });
+
+  tr.querySelector(`[data-action="add-note"]`).addEventListener("click", async (e) => {
+    const id = e.target.dataset.id;
+    const input = tr.querySelector(`[data-note-input="${id}"]`);
+    const note = input.value.trim();
+    if (!note) return;
+    try {
+      await api(`/api/applications/${id}/timeline`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      });
+      input.value = "";
+      loadTimeline(id);
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  return tr;
+}
+
+async function loadTimeline(appId) {
+  try {
+    const events = await api(`/api/applications/${appId}/timeline`);
+    const list = document.getElementById(`timeline-${appId}`);
+    if (!list) return;
+    list.innerHTML = events.length
+      ? events.map((ev) => `<li><span class="ts">${new Date(ev.created_at).toLocaleString()}</span>${escapeHtml(ev.note)}</li>`).join("")
+      : "<li>No notes yet.</li>";
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ---- Reminders ----
+async function loadReminders() {
+  const due = await api("/api/reminders");
+  const bar = el("reminder-bar");
+  if (due.length === 0) {
+    bar.classList.remove("show");
+    return;
+  }
+  bar.classList.add("show");
+  bar.innerHTML = `<strong>Follow-up reminders (${due.length})</strong>` +
+    due.map((d) => `${escapeHtml(d.company)} — follow up by ${d.follow_up_date}`).join(" · ");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+// ---- Init ----
+// Loads the data views; only called once we know we have a valid session.
+function initApp() {
+  loadSavedResume();
+  loadSettings();
+  loadApplications();
+  loadReminders();
+}
+
+// On page load: if a token is saved, verify it's still valid (via /api/auth/me)
+// before showing the app; otherwise show the login/register screen.
+(async function bootstrap() {
+  const token = getToken();
+  if (!token) {
+    showAuthScreen();
+    return;
+  }
+  try {
+    const user = await api("/api/auth/me");
+    showApp(user.email);
+    initApp();
+  } catch (err) {
+    // api() already clears the token and shows the auth screen on 401
+    console.warn("Session check failed", err);
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,10 +1,13 @@
-# Trackr — AI Job Application Tracker (v1.3)
+# Trackr — AI Job Application Tracker (v2.0)
 
-> **v1.3 changelog:** added **authentication**. Every user now registers
-> with an email + password, logs in, and gets a private account — their
-> resume, tracked applications, notes, and notification settings are no
-> longer shared with other visitors. See
-> [What's new in v1.3](#-whats-new-in-v13) below for details.
+> **v2.0 changelog:** the frontend is now a **React app** (Vite + Tailwind +
+> React Router), replacing the static HTML/JS pages from v1.4. This version
+> also fixes two UX bugs (no way back from the login screen, a hover
+> contrast bug on the nav "Get started" button), adds a **password
+> visibility toggle**, and introduces **user profiles** — a username, editable
+> anytime, plus in-app password changes. The "low-code, no build step" rule
+> from v1.x is dropped here by request; see
+> [What's new in v2.0](#-whats-new-in-v20) below for the full breakdown.
 
 
 Students applying to 100+ companies lose track of what was applied to, when
@@ -144,13 +147,113 @@ random value before deploying, or anyone could forge a valid login token.
 
 ---
 
+## 🆕 What's new in v1.4
+
+The frontend is now **two static pages** instead of one, with a shared
+visual identity:
+
+| File | Purpose |
+|---|---|
+| `frontend/index.html` | **Landing page.** Public marketing page — explains what Trackr does, how it works, and links to the app. No login required, no API calls. |
+| `frontend/app.html` | **The app.** Login/register screen, then a dashboard with stat cards, tabbed navigation (Applications / New application / Settings), and all existing functionality from v1.1–v1.3 (analyze, track, edit, search, filter, timeline, export, notification settings). |
+
+**Design direction:** the whole product is about tracking many things
+moving through stages at once (Applied → Interview → Offer/Rejected) — the
+same mental model as an airport departure board. That's the visual
+throughline:
+
+- A **departure-board hero** on the landing page: sample tracked
+  applications "flip" into place like split-flap board rows (respects
+  `prefers-reduced-motion`).
+- **Status pills** in the dashboard table use the same board-inspired
+  palette (slate = Applied, amber = Interview, green = Offer, rust = Rejected).
+- **Typography**: Space Grotesk for headlines, Inter for body text, and IBM
+  Plex Mono for data/scores/status — the monospace face ties back to the
+  board motif.
+- **Dashboard stat cards** (Tracked / Interviews / Avg match / Follow-ups
+  due) are computed client-side from the same `/api/applications` and
+  `/api/reminders` responses the table already uses — no new API calls.
+
+No backend changes in this version — `backend/app.py` and the API contract
+are untouched. `vercel.json` now also rewrites `/app` → `/app.html` for a
+cleaner URL if you want to link people straight to the dashboard.
+
+---
+
+## 🆕 What's new in v2.0
+
+**The frontend is now a real React app** (`frontend/`), built with Vite,
+styled with Tailwind CSS, and routed with React Router — replacing the two
+static HTML pages from v1.4. Structure:
+
+```
+frontend/src/
+├── main.jsx                    # entry point (Router + Auth/Toast providers)
+├── App.jsx                     # route definitions
+├── lib/api.js                   # fetch wrapper: attaches auth token, handles 401s
+├── context/
+│   ├── AuthContext.jsx           # login/register/logout, session bootstrap
+│   └── ToastContext.jsx          # toast notifications (replaces alert())
+├── components/
+│   ├── ProtectedRoute.jsx        # redirects to /login if not authenticated
+│   └── StatusPill.jsx            # Applied/Interview/Offer/Rejected badge
+└── pages/
+    ├── Landing.jsx                # marketing page ("/")
+    ├── Auth.jsx                   # login/register ("/login", "/register")
+    ├── DashboardLayout.jsx        # nav + tabs + user menu, wraps the routes below
+    └── dashboard/
+        ├── Applications.jsx        # stat cards, search/filter, table, detail drawer
+        ├── NewApplication.jsx      # paste job/resume, PDF upload, analyze, track
+        ├── Settings.jsx            # notification preferences
+        └── Profile.jsx             # NEW: username + password management
+```
+
+**Bugs fixed from the previous version:**
+
+| Bug | Fix |
+|---|---|
+| No way back from the login screen | `Auth.jsx` now has a persistent "← Back to Trackr" link to the landing page. |
+| "Get started" in the nav was unreadable on hover | Root cause: a generic `.nav-links a:hover` color rule was overriding the button's own text color, so on hover the text became the same dark navy as the button background. Rebuilt with Tailwind, every button now sets its own explicit background *and* text color for every state — no more inherited/overridden colors. |
+
+**New features:**
+
+| Feature | How it works |
+|---|---|
+| **User profiles** | A new **Profile** tab (in the user menu) lets you view your email, and edit your **username** and **password**. Backend: `users` table now has a `username` column (auto-generated from your email prefix at signup if you don't set one), and a new `PUT /api/auth/profile` endpoint handles updates. Changing your password requires your current password. |
+| **Password visibility toggle** | Every password field (login, register, change-password) has an eye icon to reveal/hide what you typed. |
+| **Toast notifications** | Save/error feedback now shows as a toast in the corner instead of `alert()` or small inline text. |
+| **Slide-over detail drawer** | Clicking "Details" on an application now opens a proper slide-over panel (job description, resume snapshot, notes timeline) instead of an inline expanding table row. |
+
+**Design refresh:** kept the departure-board visual identity from v1.4
+(Space Grotesk / Inter / IBM Plex Mono, the slate/amber/green/rust status
+palette, the flip-animated hero board) but rebuilt everything as proper
+React components with Tailwind utility classes, consistent spacing, and
+real hover/focus states throughout.
+
+New/changed API routes:
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | Now also accepts an optional `username` (validated, must be unique; auto-generated from the email prefix if omitted) |
+| POST | `/api/auth/login` | Now also returns `username` |
+| GET | `/api/auth/me` | Now also returns `username` |
+| PUT | `/api/auth/profile` | **New.** `{username}` and/or `{current_password, new_password}` → updates the logged-in user's profile |
+
+> ⚠️ **Upgrading from v1.3:** the `users` table gets a new `username` column
+> via an automatic migration (`ALTER TABLE ... ADD COLUMN`) — existing
+> accounts keep working, they just won't have a username set until they
+> visit the Profile tab (or the frontend can be updated to prompt for one).
+
+---
+
 ## 🏗 Architecture
 
 ```
 ┌─────────────────────┐        HTTPS/JSON       ┌──────────────────────┐
-│   Frontend (static)  │  ───────────────────►   │   Backend (Flask)    │
-│   HTML + CSS + JS    │  ◄───────────────────   │   REST API           │
-│   Deployed: Vercel    │                         │   Deployed: Render    │
+│  Frontend (React)     │  ───────────────────►   │   Backend (Flask)    │
+│  Vite + Tailwind +    │  ◄───────────────────   │   REST API           │
+│  React Router          │                         │                       │
+│  Deployed: Vercel      │                         │   Deployed: Render    │
 └─────────────────────┘                          └──────────┬───────────┘
                                                               │
                                        ┌──────────────────────┼───────────────────┐
@@ -190,13 +293,19 @@ Auto-email Weekly Digest             (Monday scheduled job, SMTP)
 ```
 job-tracker/
 ├── backend/
-│   ├── app.py            # Flask app: DB + Groq calls + REST API (single file, low-code)
+│   ├── app.py            # Flask app: DB + Groq calls + REST API
 │   ├── requirements.txt
 │   ├── render.yaml        # one-click Render deploy config
 │   └── .env.example
 ├── frontend/
-│   ├── index.html         # entire UI: HTML + CSS + vanilla JS (no build step)
-│   └── vercel.json
+│   ├── src/                # React app (see the v2.0 section above for the full tree)
+│   ├── index.html          # Vite entry HTML
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   ├── postcss.config.js
+│   ├── vercel.json          # SPA rewrite config
+│   └── .env.example
 └── README.md
 ```
 
@@ -224,13 +333,19 @@ curl http://localhost:5000/api/health
 
 ### 2. Frontend
 
-Just open `frontend/index.html` in a browser — no build tools needed.
-
-If your backend isn't on `localhost:5000`, set the API URL before the page
-loads by adding this in `index.html` (already wired to read it):
-```html
-<script>window.API_BASE_URL = "https://your-backend.onrender.com";</script>
+```bash
+cd frontend
+npm install
+cp .env.example .env
+# edit .env if your backend isn't on localhost:5000
+npm run dev
 ```
+
+Opens at `http://localhost:5173`. The landing page is at `/`, login/register
+at `/login` and `/register`, and the dashboard at `/app` (redirects to
+`/login` if you're not authenticated).
+
+To build for production: `npm run build` (outputs to `frontend/dist`).
 
 ---
 
@@ -254,11 +369,9 @@ loads by adding this in `index.html` (already wired to read it):
 ### Frontend → Vercel
 
 1. In Vercel: **New Project**, import the repo, set root directory to `frontend`.
-2. Framework preset: **Other** (static site, no build step).
-3. Before deploying, set the backend URL: either
-   - edit the `API_BASE_URL` line in `index.html`, or
-   - inject it via a small inline script tag as shown above.
-4. Deploy → your tracker is live.
+2. Framework preset: **Vite** (auto-detected). Build command `npm run build`, output directory `dist` (already set in `vercel.json`).
+3. Add an environment variable: `VITE_API_BASE_URL` = your Render backend URL (e.g. `https://job-tracker-backend.onrender.com`).
+4. Deploy → the landing page is at the root URL, login/register at `/login` and `/register`, and the dashboard at `/app`. `vercel.json` handles the SPA routing so refreshing any of these URLs works correctly.
 
 ---
 
@@ -274,6 +387,7 @@ by the logged-in user.
 | POST | `/api/auth/register` | `{email, password}` → create account, returns a token |
 | POST | `/api/auth/login` | `{email, password}` → verify login, returns a token |
 | GET | `/api/auth/me` | Current user's profile (used to restore a session) |
+| PUT | `/api/auth/profile` | `{username}` and/or `{current_password, new_password}` → update profile |
 | POST | `/api/analyze` | `{job_description, resume_text, job_link}` → AI extraction + match score |
 | GET | `/api/resume` | Get the saved resume (prefill on load) |
 | POST | `/api/resume/upload` | Upload a PDF resume → extracts & saves text |
@@ -298,23 +412,22 @@ provider later only requires editing that one function.
 
 ---
 
-## 🗺 Roadmap (v2+, per original project brief)
+## 🗺 Roadmap (v3+)
 
-- **Modern frontend redesign**: dashboard layout, stat cards, slide-over detail panel, color-coded score/status, toasts instead of alerts (next up)
-- **Frontend rewrite**: React + Tailwind CSS (component-based, same REST API)
 - **React Flow** knowledge graph: visualize applications as nodes (company → skills → status)
-- **Chart.js analytics**: response rate, average match score, applications per week
+- **Chart.js analytics**: response rate, average match score, applications per week — the dashboard stat cards are a lightweight first step toward this
 - **Auto-scrape job links** (where legally/technically possible) instead of manual paste
 - **Reliable scheduling**: move off in-process `APScheduler` to a Render Cron Job for the reminder/digest jobs, so they run even on the free tier's sleep/wake cycle
 - **Password reset / email verification** — currently there's no "forgot password" flow
 - **PostgreSQL** instead of SQLite for persistent, non-ephemeral storage on Render
 - **Excel (.xlsx) export** alongside CSV, if users need native Excel formatting/formulas
 - **Resume version history** (keep last few uploads, not just the latest)
+- **Avatar upload** for profiles (currently just an initial-letter badge)
 
 ---
 
 ## 🛠 Tech stack summary
 
 - **Backend**: Python, Flask, SQLite, Groq API, Gunicorn, pypdf (PDF text extraction), APScheduler (scheduled jobs), smtplib (email), PyJWT + Werkzeug security (authentication)
-- **Frontend (v1)**: HTML, CSS, vanilla JavaScript (zero build step)
+- **Frontend**: React 18, Vite, React Router, Tailwind CSS, lucide-react (icons), Space Grotesk / Inter / IBM Plex Mono via Google Fonts
 - **Deployment**: Vercel (frontend), Render (backend)
