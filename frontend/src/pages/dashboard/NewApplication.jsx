@@ -109,7 +109,7 @@ export default function NewApplication() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="">
       <div className="bg-white border border-line rounded-xl p-6">
         <h2 className="font-display font-bold text-lg mb-1">
           Paste a job + your resume
